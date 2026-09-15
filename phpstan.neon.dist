@@ -1,0 +1,7 @@
+parameters:
+  bootstrapFiles:
+    - vendor/php-stubs/wordpress-stubs/wordpress-stubs.php
+  level: 3
+  paths:
+    - includes
+    - qrip.php

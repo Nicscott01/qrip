@@ -1,0 +1,7 @@
+<?php
+use PHPUnit\Framework\TestCase;
+final class CoreTest extends TestCase {
+	public function test_slug_and_managed_url(): void { $this->assertSame( 'mstoronto-2026-booth', QRip_Core::normalize_slug( 'MSToronto 2026 Booth' ) ); $this->assertTrue( QRip_Core::valid_slug( 'mstoronto-2026' ) ); $this->assertFalse( QRip_Core::valid_slug( 'bad_slug' ) ); $this->assertSame( 'https://example.test/go/mstoronto', QRip_Core::managed_url( 'mstoronto' ) ); }
+	public function test_unsafe_urls_are_rejected(): void { foreach ( array( '//example.com', '/relative', 'javascript:alert(1)', 'data:text/plain,x', 'file:///tmp/a', 'https://', ' https://example.com' ) as $url ) { $this->assertFalse( QRip_Core::valid_destination( $url ) ); } $this->assertTrue( QRip_Core::valid_destination( 'https://example.com/a?b=c' ) ); }
+	public function test_qr_is_2048_with_white_quiet_zone_and_managed_payload(): void { $svg = QRip_Core::qr_result( 'mstoronto', 'svg' )->getString(); $this->assertStringContainsString( 'width="2048px"', $svg ); $this->assertSame( 'https://example.test/go/mstoronto', QRip_Core::managed_url( 'mstoronto' ) ); $image = imagecreatefromstring( QRip_Core::qr_result( 'mstoronto', 'png' )->getString() ); $this->assertSame( 2048, imagesx( $image ) ); $this->assertSame( 2048, imagesy( $image ) ); $this->assertGreaterThanOrEqual( 250, imagecolorsforindex( $image, imagecolorat( $image, 0, 0 ) )["red"] ); imagedestroy( $image ); }
+}

@@ -2,7 +2,7 @@
 
 ## Project location and repository boundary
 
-- The editable project lives at `/Users/nscott/web_repos/localdev/web/app/plugins/qrcodehost`.
+- The editable project lives at `/Users/nscott/web_repos/localdev/web/app/plugins/qrip`.
 - Work from that directory when reading, editing, testing, or running project-specific commands.
 - This plugin is installed inside the local Bedrock site at `/Users/nscott/web_repos/localdev`, but it is intentionally excluded by the Bedrock repository's `web/app/plugins/*` rule in `/Users/nscott/web_repos/localdev/.gitignore`.
 - Because the plugin is ignored by the parent Bedrock repository, this non-`-dev` directory is the editable source and is exempt from the usual requirement to work in a sibling directory suffixed with `-dev`.
