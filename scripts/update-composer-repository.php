@@ -26,8 +26,8 @@ if ( ! is_array( $index ) || ! isset( $index['packages'] ) || ! is_array( $index
 	exit( 1 );
 }
 
-$index['packages']['qrip/wordpress-plugin'][ $version ] = array(
-	'name'    => 'qrip/wordpress-plugin',
+$index['packages']['qrip/qrip'][ $version ] = array(
+	'name'    => 'qrip/qrip',
 	'version' => $version,
 	'type'    => 'wordpress-plugin',
 	'dist'    => array(
@@ -36,5 +36,5 @@ $index['packages']['qrip/wordpress-plugin'][ $version ] = array(
 	),
 );
 
-ksort( $index['packages']['qrip/wordpress-plugin'], SORT_NATURAL );
+ksort( $index['packages']['qrip/qrip'], SORT_NATURAL );
 file_put_contents( $path, json_encode( $index, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) . PHP_EOL );

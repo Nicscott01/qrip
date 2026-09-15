@@ -15,7 +15,7 @@
         },
         "platform-check": false
     },
-    "name": "qrip/wordpress-plugin",
+    "name": "qrip/qrip",
     "description": "First-party editable QR redirects for WordPress.",
     "license": ["proprietary"],
     "scripts": {
