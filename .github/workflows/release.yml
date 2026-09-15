@@ -1,0 +1,31 @@
+name: Build plugin release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: composer:v2
+      - name: Install production dependencies
+        run: composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
+      - name: Build installable plugin archive
+        run: |
+          mkdir -p release/qrip
+          rsync -a --exclude='.git' --exclude='.github' --exclude='release' --exclude='tests' --exclude='AGENTS.md' --exclude='QR-REDIRECT-MANAGER-SPEC.md' --exclude='composer.json' --exclude='composer.lock' --exclude='phpunit.xml.dist' --exclude='phpstan.neon.dist' --exclude='.gitignore' --exclude='.phpunit.result.cache' ./ release/qrip/
+          cd release
+          zip -r qrip.zip qrip
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" release/qrip.zip --generate-notes --title "QRip ${{ github.ref_name }}"
