@@ -1,5 +1,15 @@
 {
-  "packages": {
-    "qrip/qrip": {}
-  }
+    "packages": {
+        "qrip/qrip": {
+            "1.0.2": {
+                "name": "qrip/qrip",
+                "version": "1.0.2",
+                "type": "wordpress-plugin",
+                "dist": {
+                    "url": "https://github.com/Nicscott01/qrip/releases/download/v1.0.2/qrip-v1.0.2.zip",
+                    "type": "zip"
+                }
+            }
+        }
+    }
 }
