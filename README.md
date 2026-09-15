@@ -1,6 +1,6 @@
 # QRip
 
-QRip creates first-party, editable QR redirects. Every QR image encodes `https://your-site.example/go/your-slug`, never its current destination. Active links redirect with HTTP 302; paused links return HTTP 410. PHP 8.1+ and WordPress 6.4+ are required.
+QRip creates first-party, editable QR redirects. Every QR image encodes `https://your-site.example/go/your-slug`, never its current destination. Active links redirect with HTTP 302; paused links return HTTP 410. PHP 8.4+ and WordPress 6.4+ are required.
 
 ## Print guidance
 
