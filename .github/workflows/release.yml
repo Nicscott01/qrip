@@ -3,7 +3,7 @@ name: Build plugin release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 permissions:
   contents: write
@@ -15,17 +15,34 @@ jobs:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.3'
+          php-version: "8.3"
           tools: composer:v2
       - name: Install production dependencies
         run: composer install --no-dev --prefer-dist --no-interaction --optimize-autoloader
       - name: Build installable plugin archive
+        env:
+          ARCHIVE_NAME: qrip-${{ github.ref_name }}.zip
         run: |
           mkdir -p release/qrip
-          rsync -a --exclude='.git' --exclude='.github' --exclude='release' --exclude='tests' --exclude='AGENTS.md' --exclude='QR-REDIRECT-MANAGER-SPEC.md' --exclude='composer.json' --exclude='composer.lock' --exclude='phpunit.xml.dist' --exclude='phpstan.neon.dist' --exclude='.gitignore' --exclude='.phpunit.result.cache' ./ release/qrip/
+          rsync -a --exclude=".git" --exclude=".github" --exclude="release" --exclude="tests" --exclude="AGENTS.md" --exclude="QR-REDIRECT-MANAGER-SPEC.md" --exclude="composer.json" --exclude="composer.lock" --exclude="phpunit.xml.dist" --exclude="phpstan.neon.dist" --exclude=".gitignore" --exclude=".phpunit.result.cache" ./ release/qrip/
           cd release
-          zip -r qrip.zip qrip
+          zip -r "$ARCHIVE_NAME" qrip
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" release/qrip.zip --generate-notes --title "QRip ${{ github.ref_name }}"
+          ARCHIVE_NAME: qrip-${{ github.ref_name }}.zip
+        run: gh release create "${{ github.ref_name }}" "release/$ARCHIVE_NAME" --generate-notes --title "QRip ${{ github.ref_name }}"
+      - name: Check out repository index
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: repository-index
+      - name: Publish release to Composer repository index
+        working-directory: repository-index
+        run: |
+          php scripts/update-composer-repository.php "${{ github.ref_name }}" "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/qrip-${{ github.ref_name }}.zip"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages.json
+          git diff --cached --quiet || git commit -m "Publish QRip ${{ github.ref_name }} to Composer index"
+          git push origin HEAD:${{ github.event.repository.default_branch }}
