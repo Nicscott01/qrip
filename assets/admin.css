@@ -1,0 +1,29 @@
+.qrip-file-card {
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	border-left: 4px solid #2271b1;
+	box-sizing: border-box;
+	max-width: 640px;
+	padding: 12px 14px;
+}
+
+.qrip-file-card.is-empty {
+	border-left-color: #c3c4c7;
+}
+
+.qrip-file-card > span,
+.qrip-file-card > a {
+	display: block;
+	margin-top: 4px;
+}
+
+.qrip-warning {
+	color: #b32d2e;
+}
+
+.qrip-destination-panel[hidden],
+#qrip-utm[hidden],
+.qrip-file-card [hidden],
+.qrip-admin button[hidden] {
+	display: none;
+}

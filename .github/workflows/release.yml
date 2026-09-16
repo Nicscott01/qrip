@@ -24,7 +24,7 @@ jobs:
           ARCHIVE_NAME: qrip-${{ github.ref_name }}.zip
         run: |
           mkdir -p release/qrip
-          rsync -a --exclude=".git" --exclude=".github" --exclude="release" --exclude="tests" --exclude="AGENTS.md" --exclude="QR-REDIRECT-MANAGER-SPEC.md" --exclude="composer.json" --exclude="composer.lock" --exclude="phpunit.xml.dist" --exclude="phpstan.neon.dist" --exclude=".gitignore" --exclude=".phpunit.result.cache" ./ release/qrip/
+          rsync -a --exclude=".git" --exclude=".github" --exclude="release" --exclude="tests" --exclude="scripts" --exclude="AGENTS.md" --exclude="QR-REDIRECT-MANAGER-SPEC.md" --exclude="FEATURE-ADD-MANAGED-FILES.md" --exclude="composer.json" --exclude="composer.lock" --exclude="packages.json" --exclude="phpunit.xml.dist" --exclude="phpstan.neon.dist" --exclude=".gitignore" --exclude=".phpunit.result.cache" ./ release/qrip/
           cd release
           zip -r "$ARCHIVE_NAME" qrip
       - name: Publish GitHub Release
