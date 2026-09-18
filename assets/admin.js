@@ -57,5 +57,12 @@
 		});
 		slug.addEventListener('input', function () { this.dataset.edited = '1'; });
 	}
+	var deleteConfirmation = document.getElementById('qrip-delete-confirmation');
+	var deleteButton = document.querySelector('.qrip-delete-confirm');
+	if (deleteConfirmation && deleteButton) {
+		deleteConfirmation.addEventListener('input', function () {
+			deleteButton.disabled = deleteConfirmation.value !== 'DELETE';
+		});
+	}
 	updateDestinationPanels();
 }());

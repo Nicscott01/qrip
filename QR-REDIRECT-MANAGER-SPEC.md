@@ -78,6 +78,12 @@ Columns:
 
 Provide search by name, slug, and destination URL.
 
+### Permanent retirement
+
+Existing records have a collapsed **Danger zone** on the edit screen; new records and list-table rows do not expose deletion controls. The retirement form is separate from the update form and shows the record name, managed URL, scan count, and most recent scan when available. It warns that printed and shared copies cannot be recalled, recommends pausing when the administrator is uncertain, and requires the exact uppercase confirmation `DELETE`.
+
+Retirement permanently reserves the slug and converts the record into a minimal tombstone. The managed URL returns a non-cached `410 Gone` response without incrementing scans, while unknown slugs continue through the normal WordPress 404 path. The tombstone retains the original post ID, slug, deleted status, deletion time, and deleting user; destination, attachment reference, notes, UTM values, scan data, creator/editor metadata, and other campaign metadata are removed. The underlying Media Library attachment is never deleted, and rewrite rules are not flushed as part of retirement. Retired records are excluded from the normal list and search results and cannot be edited, restored, or reused.
+
 ### Create/edit screen
 
 Fields:

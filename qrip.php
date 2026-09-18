@@ -2,7 +2,7 @@
 /**
  * Plugin Name: QRip
  * Description: First-party, editable QR-code redirects for durable printed materials.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Requires at least: 6.4
  * Requires PHP: 8.4
  * Author: QRip
@@ -11,7 +11,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'QRIP_VERSION', '1.1.0' );
+define( 'QRIP_VERSION', '1.2.0' );
 define( 'QRIP_FILE', __FILE__ );
 define( 'QRIP_DIR', plugin_dir_path( __FILE__ ) );
 define( 'QRIP_URL', plugin_dir_url( __FILE__ ) );

@@ -23,8 +23,14 @@ class QRip_Core {
 	const META_LAST_SCAN = '_qrip_last_scan_at';
 	const META_CREATED_BY = '_qrip_created_by';
 	const META_UPDATED_BY = '_qrip_updated_by';
+	const META_DELETED_AT = '_qrip_deleted_at';
+	const META_DELETED_BY = '_qrip_deleted_by';
 	const DESTINATION_URL = 'url';
 	const DESTINATION_MEDIA = 'media';
+	const STATUS_ACTIVE = 'active';
+	const STATUS_PAUSED = 'paused';
+	const STATUS_DELETED = 'deleted';
+	const DELETED_TITLE = 'Retired QR code';
 	const ERROR_DESTINATION_UNAVAILABLE = 'qrip_destination_unavailable';
 
 	public static function init() {
@@ -93,6 +99,11 @@ class QRip_Core {
 		$name = sanitize_text_field( $input['name'] ?? '' ); $slug = self::normalize_slug( $input['slug'] ?? '' ); $destination = esc_url_raw( trim( (string) ( $input['destination'] ?? '' ) ) );
 		$type = sanitize_key( $input['destination_type'] ?? self::DESTINATION_URL ); $attachment_id = absint( $input['attachment_id'] ?? 0 );
 		$status = ( $input['status'] ?? 'active' ) === 'paused' ? 'paused' : 'active';
+		if ( $id ) {
+			$existing = self::record( $id );
+			if ( ! $existing ) { return new WP_Error( 'qrip_record_not_found', __( 'QR code not found.', 'qrip' ) ); }
+			if ( self::STATUS_DELETED === $existing['status'] ) { return new WP_Error( 'qrip_slug_retired', __( 'That QR code has been permanently retired and cannot be edited.', 'qrip' ) ); }
+		}
 		if ( '' === $name ) { return new WP_Error( 'qrip_name', __( 'Name is required.', 'qrip' ) ); }
 		if ( ! self::valid_slug( $slug ) ) { return new WP_Error( 'qrip_slug', __( 'Use a URL-safe slug with lowercase letters, numbers, and hyphens.', 'qrip' ) ); }
 		if ( ! self::is_unique_slug( $slug, $id ) ) { return new WP_Error( 'qrip_slug_duplicate', __( 'That slug is already in use.', 'qrip' ) ); }
@@ -109,6 +120,81 @@ class QRip_Core {
 		if ( ! $id ) { update_post_meta( $post_id, self::META_CREATED_BY, $user ); update_post_meta( $post_id, self::META_SCANS, 0 ); }
 		foreach ( self::utm_keys() as $key ) { self::DESTINATION_URL === $type ? update_post_meta( $post_id, '_qrip_' . $key, sanitize_text_field( $input[ $key ] ?? '' ) ) : delete_post_meta( $post_id, '_qrip_' . $key ); }
 		return (int) $post_id;
+	}
+
+	/**
+	 * Convert a QR record into a permanent, minimal slug tombstone.
+	 *
+	 * The record's post row remains so the managed slug can continue to return
+	 * 410 Gone. The transaction requires the normal WordPress InnoDB tables.
+	 *
+	 * @param int $id QR record ID.
+	 * @return true|WP_Error
+	 */
+	public static function retire_record( $id ) {
+		$id = absint( $id );
+		$record = self::record( $id );
+		if ( ! $record ) { return new WP_Error( 'qrip_record_not_found', __( 'QR code not found.', 'qrip' ) ); }
+		if ( self::STATUS_DELETED === $record['status'] ) { return new WP_Error( 'qrip_already_deleted', __( 'This QR code has already been retired.', 'qrip' ) ); }
+
+		global $wpdb;
+		if ( ! isset( $wpdb ) || ! is_object( $wpdb ) ) { return new WP_Error( 'qrip_retirement_failed', __( 'The QR code could not be retired. No changes were saved.', 'qrip' ) ); }
+		if ( false === $wpdb->query( 'START TRANSACTION' ) ) { return new WP_Error( 'qrip_retirement_failed', __( 'The QR code could not be retired. No changes were saved.', 'qrip' ) ); }
+
+		try {
+			$locked_post = $wpdb->get_row( $wpdb->prepare( "SELECT ID, post_type FROM {$wpdb->posts} WHERE ID = %d FOR UPDATE", $id ) );
+			if ( ! $locked_post || self::POST_TYPE !== $locked_post->post_type ) { throw new RuntimeException( 'QR record changed before retirement.' ); }
+
+			wp_cache_delete( $id, 'post_meta' );
+			$fresh_record = self::record( $id );
+			if ( ! $fresh_record ) { throw new RuntimeException( 'QR record changed before retirement.' ); }
+			if ( self::STATUS_DELETED === $fresh_record['status'] ) { throw new RuntimeException( 'QR record has already been retired.' ); }
+			if ( ! self::valid_slug( $fresh_record['slug'] ) ) { throw new RuntimeException( 'QR record has no valid slug.' ); }
+
+			$deleted_at = current_time( 'mysql', true );
+			$deleted_by = get_current_user_id();
+			$updated = $wpdb->update(
+				$wpdb->posts,
+				array(
+					'post_title' => self::DELETED_TITLE,
+					'post_content' => '',
+					'post_excerpt' => '',
+					'post_modified' => current_time( 'mysql' ),
+					'post_modified_gmt' => $deleted_at,
+				),
+				array( 'ID' => $id ),
+				array( '%s', '%s', '%s', '%s', '%s' ),
+				array( '%d' )
+			);
+			if ( false === $updated ) { throw new RuntimeException( 'QR record could not be updated.' ); }
+
+			$revision_ids = $wpdb->get_col( $wpdb->prepare( "SELECT ID FROM {$wpdb->posts} WHERE post_parent = %d AND post_type = 'revision'", $id ) );
+			if ( ! is_array( $revision_ids ) ) { throw new RuntimeException( 'QR revisions could not be inspected.' ); }
+			foreach ( $revision_ids as $revision_id ) {
+				$revision_id = absint( $revision_id );
+				if ( false === $wpdb->delete( $wpdb->postmeta, array( 'post_id' => $revision_id ), array( '%d' ) ) ) { throw new RuntimeException( 'QR revisions could not be removed.' ); }
+				if ( false === $wpdb->delete( $wpdb->posts, array( 'ID' => $revision_id, 'post_type' => 'revision' ), array( '%d', '%s' ) ) ) { throw new RuntimeException( 'QR revisions could not be removed.' ); }
+			}
+
+			if ( false === $wpdb->delete( $wpdb->postmeta, array( 'post_id' => $id ), array( '%d' ) ) ) { throw new RuntimeException( 'QR metadata could not be removed.' ); }
+			$tombstone = array(
+				self::META_SLUG => $fresh_record['slug'],
+				self::META_STATUS => self::STATUS_DELETED,
+				self::META_DELETED_AT => $deleted_at,
+				self::META_DELETED_BY => $deleted_by,
+			);
+			foreach ( $tombstone as $meta_key => $meta_value ) {
+				if ( false === $wpdb->insert( $wpdb->postmeta, array( 'post_id' => $id, 'meta_key' => $meta_key, 'meta_value' => (string) $meta_value ), array( '%d', '%s', '%s' ) ) ) { throw new RuntimeException( 'QR tombstone could not be written.' ); }
+			}
+
+			if ( false === $wpdb->query( 'COMMIT' ) ) { throw new RuntimeException( 'QR retirement could not be committed.' ); }
+		} catch ( Throwable $exception ) {
+			$wpdb->query( 'ROLLBACK' );
+			return new WP_Error( 'qrip_retirement_failed', __( 'The QR code could not be retired. No changes were saved.', 'qrip' ) );
+		}
+
+		clean_post_cache( $id );
+		return true;
 	}
 
 	public static function destination_with_utm( $record ) {
@@ -135,7 +221,7 @@ class QRip_Core {
 		$slug = get_query_var( self::QUERY_VAR ); if ( ! is_string( $slug ) || ! self::valid_slug( $slug ) ) { return; }
 		$id = self::find_by_slug( $slug ); if ( ! $id ) { global $wp_query; $wp_query->set_404(); status_header( 404 ); return; }
 		$record = self::record( $id ); nocache_headers(); header( 'X-Robots-Tag: noindex, nofollow', true );
-		if ( 'paused' === $record['status'] ) { status_header( 410 ); wp_die( esc_html__( 'This link is no longer active.', 'qrip' ), esc_html__( 'Link unavailable', 'qrip' ), array( 'response' => 410 ) ); }
+		if ( in_array( $record['status'], array( self::STATUS_PAUSED, self::STATUS_DELETED ), true ) ) { status_header( 410 ); wp_die( esc_html__( 'This link is no longer active.', 'qrip' ), esc_html__( 'Link unavailable', 'qrip' ), array( 'response' => 410 ) ); }
 		$destination = self::resolve_destination( $record );
 		if ( is_wp_error( $destination ) ) { status_header( 410 ); wp_die( esc_html__( 'This file is no longer available.', 'qrip' ), esc_html__( 'File unavailable', 'qrip' ), array( 'response' => 410 ) ); }
 		global $wpdb;
