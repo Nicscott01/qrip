@@ -219,3 +219,4 @@ require dirname( __DIR__ ) . '/includes/class-qrip-core.php';
 require dirname( __DIR__ ) . '/includes/class-qrip-admin.php';
 require dirname( __DIR__ ) . '/includes/class-qrip-images.php';
 require dirname( __DIR__ ) . '/includes/class-qrip-abilities.php';
+require dirname( __DIR__ ) . '/includes/class-qrip-mcp.php';
