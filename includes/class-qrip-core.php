@@ -95,7 +95,7 @@ class QRip_Core {
 
 	public static function utm_keys() { return array( 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term' ); }
 
-	public static function save_record( $input, $id = 0 ) {
+	public static function prepare_record( $input, $id = 0 ) {
 		$name = sanitize_text_field( $input['name'] ?? '' ); $slug = self::normalize_slug( $input['slug'] ?? '' ); $destination = esc_url_raw( trim( (string) ( $input['destination'] ?? '' ) ) );
 		$type = sanitize_key( $input['destination_type'] ?? self::DESTINATION_URL ); $attachment_id = absint( $input['attachment_id'] ?? 0 );
 		$status = ( $input['status'] ?? 'active' ) === 'paused' ? 'paused' : 'active';
@@ -111,14 +111,29 @@ class QRip_Core {
 		if ( self::DESTINATION_URL === $type && ! self::valid_destination( $destination ) ) { return new WP_Error( 'qrip_destination', __( 'Destination URL must be an absolute http or https URL.', 'qrip' ) ); }
 		if ( self::DESTINATION_MEDIA === $type && ( ! $attachment_id || 'attachment' !== get_post_type( $attachment_id ) ) ) { return new WP_Error( 'qrip_attachment', __( 'Select a valid Media Library file.', 'qrip' ) ); }
 		if ( self::DESTINATION_MEDIA === $type && is_wp_error( self::resolve_media_destination( $attachment_id ) ) ) { return new WP_Error( 'qrip_attachment_unavailable', __( 'The selected Media Library file does not have an available web address.', 'qrip' ) ); }
+		$notes = sanitize_textarea_field( $input['notes'] ?? '' );
+		$utm = array();
+		foreach ( self::utm_keys() as $key ) { $utm[ $key ] = self::DESTINATION_URL === $type ? sanitize_text_field( $input[ $key ] ?? '' ) : ''; }
+		return array(
+			'name' => $name, 'slug' => $slug, 'destination_type' => $type,
+			'destination' => self::DESTINATION_URL === $type ? $destination : '',
+			'attachment_id' => self::DESTINATION_MEDIA === $type ? $attachment_id : 0,
+			'status' => $status, 'notes' => $notes, 'utm' => $utm,
+		);
+	}
+
+	public static function save_record( $input, $id = 0 ) {
+		$record = self::prepare_record( $input, $id );
+		if ( is_wp_error( $record ) ) { return $record; }
+		$type = $record['destination_type'];
 		$user = get_current_user_id();
-		$post_data = array( 'ID' => (int) $id, 'post_type' => self::POST_TYPE, 'post_title' => $name, 'post_status' => 'publish' );
+		$post_data = array( 'ID' => (int) $id, 'post_type' => self::POST_TYPE, 'post_title' => $record['name'], 'post_status' => 'publish' );
 		$post_id = $id ? wp_update_post( wp_slash( $post_data ), true ) : wp_insert_post( wp_slash( $post_data ), true );
 		if ( is_wp_error( $post_id ) ) { return $post_id; }
-		update_post_meta( $post_id, self::META_SLUG, $slug ); update_post_meta( $post_id, self::META_DESTINATION_TYPE, $type ); update_post_meta( $post_id, self::META_STATUS, $status ); update_post_meta( $post_id, self::META_NOTES, sanitize_textarea_field( $input['notes'] ?? '' ) ); update_post_meta( $post_id, self::META_UPDATED_BY, $user );
-		if ( self::DESTINATION_URL === $type ) { update_post_meta( $post_id, self::META_DESTINATION, $destination ); delete_post_meta( $post_id, self::META_ATTACHMENT_ID ); } else { update_post_meta( $post_id, self::META_ATTACHMENT_ID, $attachment_id ); delete_post_meta( $post_id, self::META_DESTINATION ); }
+		update_post_meta( $post_id, self::META_SLUG, $record['slug'] ); update_post_meta( $post_id, self::META_DESTINATION_TYPE, $type ); update_post_meta( $post_id, self::META_STATUS, $record['status'] ); update_post_meta( $post_id, self::META_NOTES, $record['notes'] ); update_post_meta( $post_id, self::META_UPDATED_BY, $user );
+		if ( self::DESTINATION_URL === $type ) { update_post_meta( $post_id, self::META_DESTINATION, $record['destination'] ); delete_post_meta( $post_id, self::META_ATTACHMENT_ID ); } else { update_post_meta( $post_id, self::META_ATTACHMENT_ID, $record['attachment_id'] ); delete_post_meta( $post_id, self::META_DESTINATION ); }
 		if ( ! $id ) { update_post_meta( $post_id, self::META_CREATED_BY, $user ); update_post_meta( $post_id, self::META_SCANS, 0 ); }
-		foreach ( self::utm_keys() as $key ) { self::DESTINATION_URL === $type ? update_post_meta( $post_id, '_qrip_' . $key, sanitize_text_field( $input[ $key ] ?? '' ) ) : delete_post_meta( $post_id, '_qrip_' . $key ); }
+		foreach ( $record['utm'] as $key => $value ) { self::DESTINATION_URL === $type ? update_post_meta( $post_id, '_qrip_' . $key, $value ) : delete_post_meta( $post_id, '_qrip_' . $key ); }
 		return (int) $post_id;
 	}
 
@@ -194,6 +209,7 @@ class QRip_Core {
 		}
 
 		clean_post_cache( $id );
+		if ( class_exists( 'QRip_Images' ) ) { QRip_Images::delete_for_record( $id ); }
 		return true;
 	}
 

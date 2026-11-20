@@ -19,9 +19,12 @@ define( 'QRIP_URL', plugin_dir_url( __FILE__ ) );
 require_once QRIP_DIR . 'vendor/autoload.php';
 require_once QRIP_DIR . 'includes/class-qrip-core.php';
 require_once QRIP_DIR . 'includes/class-qrip-admin.php';
+require_once QRIP_DIR . 'includes/class-qrip-images.php';
+require_once QRIP_DIR . 'includes/class-qrip-abilities.php';
 
 QRip_Core::init();
 QRip_Admin::init();
+QRip_Abilities::init();
 
 register_activation_hook( __FILE__, array( 'QRip_Core', 'activate' ) );
 register_deactivation_hook( __FILE__, array( 'QRip_Core', 'deactivate' ) );
