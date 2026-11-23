@@ -20,6 +20,38 @@ class QRip_Images {
 		return self::collect( $record, false )['images'];
 	}
 
+	/** Predict the URL a forced render would report for each format, without touching the filesystem. */
+	public static function planned( array $record ) {
+		$urls = array_fill_keys( array_keys( self::FORMATS ), null );
+		$id = (int) ( $record['id'] ?? 0 );
+		$slug = $record['slug'] ?? '';
+		if ( $id < 1 || ! QRip_Core::valid_slug( $slug ) || QRip_Core::STATUS_DELETED === ( $record['status'] ?? '' ) ) { return $urls; }
+		$storage = self::storage();
+		if ( ! $storage || is_link( $storage['dir'] ) ) { return $urls; }
+		$directory = $storage['dir'] . '/' . $id;
+		if ( is_link( $directory ) || ! self::can_write_under( $directory ) ) { return $urls; }
+		foreach ( self::FORMATS as $format => $mime_type ) {
+			if ( 'png' === $format && ! extension_loaded( 'gd' ) ) { continue; }
+			$urls[ $format ] = $storage['url'] . '/' . $id . '/' . self::filename( $slug, $format );
+		}
+		return $urls;
+	}
+
+	private static function filename( $slug, $format ) {
+		return $slug . '-qr-' . substr( hash( 'sha256', QRip_Core::managed_url( $slug ) . '|' . self::RENDER_VERSION . '|' . $format ), 0, 12 ) . '.' . $format;
+	}
+
+	/** Check the directory, or its nearest existing ancestor when it has not been created yet. */
+	private static function can_write_under( $path ) {
+		clearstatcache();
+		while ( ! file_exists( $path ) ) {
+			$parent = dirname( $path );
+			if ( $parent === $path ) { return false; }
+			$path = $parent;
+		}
+		return is_dir( $path ) && is_writable( $path );
+	}
+
 	private static function storage() {
 		$uploads = wp_upload_dir( null, false );
 		if ( ! empty( $uploads['error'] ) || empty( $uploads['basedir'] ) || empty( $uploads['baseurl'] ) ) { return null; }
@@ -52,11 +84,9 @@ class QRip_Images {
 			}
 			if ( is_link( $directory ) || ! is_dir( $directory ) ) { return $result; }
 
-			$managed_url = QRip_Core::managed_url( $slug );
 			$keep = array( 'index.php' );
 			foreach ( self::FORMATS as $format => $mime_type ) {
-				$hash = substr( hash( 'sha256', $managed_url . '|' . self::RENDER_VERSION . '|' . $format ), 0, 12 );
-				$filename = $slug . '-qr-' . $hash . '.' . $format;
+				$filename = self::filename( $slug, $format );
 				$keep[] = $filename;
 				$path = $directory . '/' . $filename;
 				try {

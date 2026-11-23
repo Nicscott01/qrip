@@ -109,8 +109,8 @@ class QRip_Abilities {
 		self::register_ability( self::CHANGE_SLUG, 'Change QR code URL', 'Move a QR code to a new managed URL. Every printed or shared copy of the old QR code stops working. The old slug becomes reusable. Use dry_run to preview or update-code to change a destination while keeping existing copies working.',
 			self::object_schema( array( 'id' => $id, 'slug' => $slug, 'expected_version' => $version, 'dry_run' => $dry_run ), array( 'id', 'slug' ) ), $write_result,
 			'change_slug', 'can_edit', false, true, true );
-		self::register_ability( self::REGENERATE_IMAGES, 'Regenerate QR images', 'Force QRip to render the public SVG and PNG for the current managed URL. The QR record and styling stay the same. The files are derived from the managed URL and have no undo step.',
-			self::object_schema( array( 'id' => $id ) ), $write_result, 'regenerate_images', 'can_edit', false, false, true );
+		self::register_ability( self::REGENERATE_IMAGES, 'Regenerate QR images', 'Force QRip to render the public SVG and PNG for the current managed URL. The QR record and styling stay the same. The files are derived from the managed URL and have no undo step. Use dry_run to preview which image links would change without touching any file.',
+			self::object_schema( array( 'id' => $id, 'dry_run' => $dry_run ), array( 'id' ) ), $write_result, 'regenerate_images', 'can_edit', false, false, true );
 	}
 
 	private static function register_ability( $name, $label, $description, $input, $output, $execute, $permission, $readonly, $destructive, $idempotent ) {
@@ -423,14 +423,23 @@ class QRip_Abilities {
 		$record = self::load_record( (int) $input['id'] );
 		if ( is_wp_error( $record ) ) { return $record; }
 		$before = QRip_Images::existing( $record );
+		if ( rest_sanitize_boolean( $input['dry_run'] ?? false ) ) {
+			$planned = QRip_Images::planned( $record );
+			return self::write_result( true, self::image_changes( $before, $planned ), self::serialize_code( $record, $before ), null, (bool) array_filter( $planned ) );
+		}
 		$result = QRip_Images::ensure( $record, true );
+		$urls = array_map( static function ( $image ) { return $image['url']; }, $result['images'] );
+		return self::write_result( false, self::image_changes( $before, $urls ), self::serialize_code( $record, $result['images'] ), null, ! empty( $result['written'] ) );
+	}
+
+	private static function image_changes( array $before, array $urls ) {
 		$old_urls = array();
 		$new_urls = array();
-		foreach ( $result['images'] as $format => $image ) {
+		foreach ( $urls as $format => $url ) {
 			$field = 'images.' . $format . '.url';
 			$old_urls[ $field ] = $before[ $format ]['url'];
-			$new_urls[ $field ] = $image['url'];
+			$new_urls[ $field ] = $url;
 		}
-		return self::write_result( false, self::changes( $old_urls, $new_urls ), self::serialize_code( $record, $result['images'] ), null, ! empty( $result['written'] ) );
+		return self::changes( $old_urls, $new_urls );
 	}
 }

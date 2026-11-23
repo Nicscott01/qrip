@@ -262,6 +262,117 @@ final class QRip_AbilitiesTest extends TestCase {
 		$this->run_ability( 'qrip/create-code', self::CREATE, 'qrip_slug_duplicate' );
 	}
 
+	/** Every file under the uploads fixture with its mtime and content hash. */
+	private function upload_snapshot(): array {
+		clearstatcache();
+		if ( ! is_dir( $this->uploads ) ) { return array(); }
+		$files = array();
+		foreach ( new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $this->uploads, FilesystemIterator::SKIP_DOTS ), RecursiveIteratorIterator::SELF_FIRST ) as $entry ) {
+			$files[ $entry->getPathname() ] = $entry->isDir() ? 'dir' : array( $entry->getMTime(), md5_file( $entry->getPathname() ) );
+		}
+		ksort( $files );
+		return $files;
+	}
+
+	private function preview_regeneration( array $input ): array {
+		$files = $this->upload_snapshot();
+		$posts = serialize( $GLOBALS['qrip_test_posts'] );
+		$meta = $GLOBALS['qrip_test_meta'];
+		$preview = $this->run_ability( 'qrip/regenerate-images', $input + array( 'dry_run' => true ) );
+		$this->assertTrue( $preview['dry_run'] );
+		$this->assertNull( $preview['restore'] );
+		$this->assertSame( $files, $this->upload_snapshot() );
+		$this->assertSame( $posts, serialize( $GLOBALS['qrip_test_posts'] ) );
+		$this->assertSame( $meta, $GLOBALS['qrip_test_meta'] );
+		return $preview;
+	}
+
+	public function test_regeneration_dry_run_touches_nothing_and_matches_a_real_run(): void {
+		$code = $this->run_ability( 'qrip/create-code', self::CREATE )['code'];
+		$input = array( 'id' => $code['id'] );
+		$directory = $this->uploads . '/qrip/' . $code['id'];
+		$old = time() - 3600;
+		foreach ( $code['images'] as $image ) { touch( $this->file_path( $image ), $old ); }
+		file_put_contents( $directory . '/stale-qr-000000000000.png', 'stale' );
+
+		$present = $this->preview_regeneration( $input );
+		$this->assertTrue( $present['changed'] );
+		$this->assertSame( array(), $present['changes'] );
+		$this->assertSame( $code['images'], $present['code']['images'] );
+		$this->assertFileExists( $directory . '/stale-qr-000000000000.png' );
+
+		unlink( $this->file_path( $code['images']['png'] ) );
+		$one_missing = $this->preview_regeneration( $input );
+		$this->assertSame( array( array( 'field' => 'images.png.url', 'before' => null, 'after' => $code['images']['png']['url'] ) ), $one_missing['changes'] );
+		$this->assertNull( $one_missing['code']['images']['png']['url'] );
+		$this->assertFalse( $one_missing['code']['images']['png']['available'] );
+		$this->assertSame( $code['images']['svg'], $one_missing['code']['images']['svg'] );
+		$this->assertFileDoesNotExist( $this->file_path( $code['images']['png'] ) );
+
+		$real = $this->run_ability( 'qrip/regenerate-images', $input );
+		$this->assertFalse( $real['dry_run'] );
+		$this->assertSame( $one_missing['changed'], $real['changed'] );
+		$this->assertSame( $one_missing['changes'], $real['changes'] );
+		$this->assertSame( $code['images'], $real['code']['images'] );
+		clearstatcache();
+		$this->assertGreaterThan( $old, filemtime( $this->file_path( $code['images']['svg'] ) ) );
+		$this->assertFileExists( $this->file_path( $code['images']['png'] ) );
+		$this->assertFileDoesNotExist( $directory . '/stale-qr-000000000000.png' );
+
+		QRip_Images::delete_for_record( $code['id'] );
+		$no_directory = $this->preview_regeneration( $input );
+		$this->assertSame( array( 'images.svg.url', 'images.png.url' ), array_column( $no_directory['changes'], 'field' ) );
+		$this->assertDirectoryDoesNotExist( $directory );
+		$this->assertSame( $no_directory['changes'], $this->run_ability( 'qrip/regenerate-images', $input )['changes'] );
+
+		$GLOBALS['qrip_test_home_url'] = 'https://moved.example.test';
+		$moved = $this->preview_regeneration( $input );
+		$this->assertSame( array( 'images.svg.url', 'images.png.url' ), array_column( $moved['changes'], 'field' ) );
+		$this->assertNull( $moved['changes'][0]['before'] );
+		$this->assertNotSame( $code['images']['svg']['url'], $moved['changes'][0]['after'] );
+		$this->assertSame( $moved['changes'], $this->run_ability( 'qrip/regenerate-images', $input )['changes'] );
+		foreach ( $GLOBALS['qrip_test_upload_calls'] as $call ) { $this->assertFalse( $call[1] ); }
+	}
+
+	public function test_regeneration_dry_run_keeps_permissions_and_record_errors(): void {
+		$code = $this->run_ability( 'qrip/create-code', self::CREATE )['code'];
+		$post = wp_insert_post( array( 'post_type' => 'post', 'post_title' => 'A regular post' ) );
+		$allowed = $this->ability( 'qrip/regenerate-images' )['permission_callback'];
+		$this->assertTrue( $allowed( array( 'id' => $code['id'], 'dry_run' => true ) ) );
+		$this->assertFalse( $allowed( array( 'id' => $post, 'dry_run' => true ) ) );
+		$GLOBALS['qrip_test_object_caps']['edit_post'][ $code['id'] ] = array( 'do_not_allow' );
+		$this->assertFalse( $allowed( array( 'id' => $code['id'], 'dry_run' => true ) ) );
+		unset( $GLOBALS['qrip_test_object_caps']['edit_post'][ $code['id'] ] );
+		$GLOBALS['qrip_test_capabilities']['manage_options'] = false;
+		$this->assertFalse( $allowed( array( 'id' => $code['id'], 'dry_run' => true ) ) );
+		$GLOBALS['qrip_test_capabilities']['manage_options'] = true;
+		$this->run_ability( 'qrip/regenerate-images', array( 'id' => 999, 'dry_run' => true ), 'qrip_not_found' );
+		$this->assertTrue( QRip_Core::retire_record( $code['id'] ) );
+		$this->run_ability( 'qrip/regenerate-images', array( 'id' => $code['id'], 'dry_run' => true ), 'qrip_code_retired' );
+	}
+
+	public function test_regeneration_dry_run_predicts_unavailable_storage(): void {
+		$code = $this->run_ability( 'qrip/create-code', self::CREATE )['code'];
+		$input = array( 'id' => $code['id'] );
+		$directory = $this->uploads . '/qrip/' . $code['id'];
+		if ( ! ( function_exists( 'posix_geteuid' ) && 0 === posix_geteuid() ) ) {
+			chmod( $directory, 0555 );
+			try {
+				$preview = $this->preview_regeneration( $input );
+				$real = $this->run_ability( 'qrip/regenerate-images', $input );
+				$this->assertSame( $real['changed'], $preview['changed'] );
+				$this->assertSame( $real['changes'], $preview['changes'] );
+			} finally {
+				chmod( $directory, 0755 );
+			}
+		}
+		$GLOBALS['qrip_test_uploads'] = array( 'error' => 'Uploads unavailable.' );
+		$unavailable = $this->run_ability( 'qrip/regenerate-images', $input + array( 'dry_run' => true ) );
+		$this->assertFalse( $unavailable['changed'] );
+		$this->assertSame( array(), $unavailable['changes'] );
+		$this->assertNull( $unavailable['code']['images']['svg']['url'] );
+	}
+
 	public function test_unavailable_uploads_return_null_image_links(): void {
 		$GLOBALS['qrip_test_uploads']['error'] = 'Failed to configure uploads.';
 		$code = $this->run_ability( 'qrip/create-code', self::CREATE )['code'];
